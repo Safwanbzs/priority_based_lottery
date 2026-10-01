@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Priority Faculty Lottery</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f5f7fb;color:#172033}
+.container{max-width:1100px;margin:30px auto;padding:0 18px}
+h1{margin-bottom:6px}.sub{color:#667085;margin-top:0}
+.card{background:white;border:1px solid #e3e7ef;border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 2px 8px #00000008}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input,select,button{font:inherit}
+input,select{padding:9px 10px;border:1px solid #ccd3df;border-radius:7px;background:white}
+button{padding:9px 14px;border:0;border-radius:7px;cursor:pointer;background:#2563eb;color:white}
+button.secondary{background:#e8edf5;color:#172033}
+button.danger{background:#dc3545}
+button.green{background:#198754}
+table{width:100%;border-collapse:collapse;margin-top:12px}
+th,td{border-bottom:1px solid #e8ebf0;padding:9px;text-align:left}
+th{background:#f8fafc}
+.pref{min-width:120px}
+.badge{display:inline-block;padding:4px 8px;border-radius:20px;background:#e8f1ff;color:#1558b0;font-size:13px}
+.success{color:#087443;font-weight:bold}.warning{color:#a15c00;font-weight:bold}
+.small{font-size:13px;color:#667085}
+#studentsTable input{width:100%}
+.controls{display:flex;gap:10px;flex-wrap:wrap}
+.result-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.result{border:1px solid #e2e7ef;border-radius:10px;padding:13px}
+.result h3{margin:0 0 8px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Priority Faculty Lottery</h1>
+<p class="sub">Preference-aware random allocation with faculty capacity limits.</p>
+
+<div class="card">
+<h2>1. Faculty</h2>
+<div id="facultyBox"></div>
+<div class="row" style="margin-top:12px">
+<button onclick="addFaculty()">+ Add Faculty</button>
+<button class="secondary" onclick="resetFaculty()">Reset Faculty</button>
+</div>
+<p class="small">Set each faculty's maximum number of students.</p>
+</div>
+
+<div class="card">
+<h2>2. Students & Preferences</h2>
+<div class="controls">
+<button onclick="addStudent()">+ Add Student</button>
+<button class="secondary" onclick="loadExample()">Load Example</button>
+<button class="secondary" onclick="clearStudents()">Clear Students</button>
+</div>
+<div style="overflow-x:auto">
+<table id="studentsTable"></table>
+</div>
+</div>
+
+<div class="card">
+<h2>3. Lottery Rules</h2>
+<div class="row">
+<label>Preference weights:</label>
+<input id="w1" type="number" value="100" min="1" style="width:80px">
+<input id="w2" type="number" value="60" min="1" style="width:80px">
+<input id="w3" type="number" value="35" min="1" style="width:80px">
+<input id="w4" type="number" value="20" min="1" style="width:80px">
+<input id="w5" type="number" value="10" min="1" style="width:80px">
+<input id="w6" type="number" value="5" min="1" style="width:80px">
+</div>
+<p class="small">A student's chance in a faculty lottery is proportional to the weight of that faculty's preference position. Unassigned students continue to their next preference.</p>
+<div class="row" style="margin-top:14px">
+<label><input id="compensation" type="checkbox" checked> Give small priority bonus after each failed round</label>
+</div>
+<div class="row" style="margin-top:16px">
+<button class="green" onclick="runLottery()">Run Lottery</button>
+</div>
+</div>
+
+<div id="results" class="card hidden">
+<h2>Results</h2>
+<div id="summary"></div>
+<div style="overflow-x:auto"><table id="resultTable"></table></div>
+</div>
+</div>
+
+<script>
+let faculties=[
+ {name:"Faculty 1",cap:5},{name:"Faculty 2",cap:5},{name:"Faculty 3",cap:5},
+ {name:"Faculty 4",cap:5},{name:"Faculty 5",cap:5},{name:"Faculty 6",cap:5}
+];
+let students=[];
+
+function renderFaculty(){
+ const box=document.getElementById("facultyBox");
+ box.innerHTML=faculties.map((f,i)=>`
+ <div class="row" style="margin:7px 0">
+ <input value="${esc(f.name)}" onchange="faculties[${i}].name=this.value" style="width:180px">
+ <label>Capacity <input type="number" min="0" value="${f.cap}" onchange="faculties[${i}].cap=+this.value" style="width:80px"></label>
+ <button class="danger" onclick="faculties.splice(${i},1);renderAll()">Remove</button>
+ </div>`).join("");
+}
+function renderStudents(){
+ const t=document.getElementById("studentsTable");
+ if(!students.length){t.innerHTML="<tr><td>No students yet.</td></tr>";return}
+ let head="<tr><th>Student</th>"+faculties.map((_,i)=>`<th>#${i+1}</th>`).join("")+"</tr>";
+ let rows=students.map((s,si)=>`<tr>
+ <td><input value="${esc(s.name)}" onchange="students[${si}].name=this.value"></td>
+ ${faculties.map((_,pi)=>`<td><select class="pref" onchange="students[${si}].prefs[${pi}]=this.value">
+ <option value="">—</option>${faculties.map(f=>`<option ${s.prefs[pi]===f.name?"selected":""}>${esc(f.name)}</option>`).join("")}
+ </select></td>`).join("")}
+ </tr>`).join("");
+ t.innerHTML=head+rows;
+}
+function renderAll(){renderFaculty();renderStudents()}
+function addFaculty(){faculties.push({name:"Faculty "+(faculties.length+1),cap:5});renderAll()}
+function resetFaculty(){faculties=[{name:"Faculty 1",cap:5},{name:"Faculty 2",cap:5},{name:"Faculty 3",cap:5},{name:"Faculty 4",cap:5},{name:"Faculty 5",cap:5},{name:"Faculty 6",cap:5}];renderAll()}
+function addStudent(){students.push({name:"Student "+(students.length+1),prefs:faculties.map(()=> "")});renderStudents()}
+function clearStudents(){students=[];renderStudents()}
+function loadExample(){
+ students=[
+  ["Alice",["Faculty 1","Faculty 2","Faculty 3","Faculty 4","Faculty 5","Faculty 6"]],
+  ["Bob",["Faculty 1","Faculty 3","Faculty 2","Faculty 5","Faculty 4","Faculty 6"]],
+  ["Charlie",["Faculty 1","Faculty 2","Faculty 4","Faculty 3","Faculty 6","Faculty 5"]],
+  ["David",["Faculty 2","Faculty 1","Faculty 3","Faculty 4","Faculty 5","Faculty 6"]],
+  ["Emma",["Faculty 1","Faculty 4","Faculty 2","Faculty 3","Faculty 5","Faculty 6"]],
+  ["Farhan",["Faculty 3","Faculty 1","Faculty 2","Faculty 6","Faculty 4","Faculty 5"]],
+  ["Grace",["Faculty 1","Faculty 3","Faculty 4","Faculty 2","Faculty 6","Faculty 5"]],
+  ["Hasan",["Faculty 2","Faculty 5","Faculty 1","Faculty 3","Faculty 4","Faculty 6"]],
+  ["Ivy",["Faculty 1","Faculty 2","Faculty 6","Faculty 4","Faculty 3","Faculty 5"]],
+  ["Jack",["Faculty 4","Faculty 1","Faculty 2","Faculty 3","Faculty 5","Faculty 6"]]
+ ].map(x=>({name:x[0],prefs:x[1]}));
+ renderStudents();
+}
+function esc(x){return String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+function weightedPick(candidates, weights){
+ let total=candidates.reduce((a,s)=>a+s.weight,0);
+ let r=Math.random()*total;
+ for(const c of candidates){r-=c.weight;if(r<=0)return c}
+ return candidates[candidates.length-1];
+}
+
+function runLottery(){
+ if(!students.length){alert("Add at least one student.");return}
+ if(!faculties.length){alert("Add at least one faculty.");return}
+ const weights=[1,2,3,4,5,6].map(i=>+document.getElementById("w"+i).value||1);
+ const caps={}; faculties.forEach(f=>caps[f.name]=+f.cap||0);
+ const remaining={...caps};
+ const assigned={}; students.forEach(s=>assigned[s.name]=null);
+ const priority={}; students.forEach(s=>priority[s.name]=0);
+ let unassigned=new Set(students.map(s=>s.name));
+ let rounds=[];
+
+ for(let round=0;round<faculties.length && unassigned.size;round++){
+   let proposals={};
+   for(const s of students){
+     if(!unassigned.has(s.name))continue;
+     const pref=s.prefs[round];
+     if(!pref || !(pref in remaining))continue;
+     if(remaining[pref]<=0)continue;
+     if(!proposals[pref])proposals[pref]=[];
+     proposals[pref].push(s);
+   }
+   let roundLog=[];
+   for(const f of faculties){
+     const list=proposals[f.name]||[];
+     if(!list.length || remaining[f.name]<=0)continue;
+     const candidates=list.map(s=>({
+       s,weight:weights[round]*(1+priority[s.name]*0.25)
+     }));
+     const winners=[];
+     while(candidates.length && winners.length<remaining[f.name]){
+       const w=weightedPick(candidates,weights);
+       winners.push(w.s);
+       candidates.splice(candidates.indexOf(w),1);
+     }
+     for(const s of winners){
+       assigned[s.name]=f.name;
+       remaining[f.name]--;
+       unassigned.delete(s.name);
+       roundLog.push(`${s.name} → ${f.name}`);
+     }
+   }
+   for(const name of unassigned)priority[name]++;
+   rounds.push({round:round+1,log:roundLog});
+ }
+
+ const table=document.getElementById("resultTable");
+ table.innerHTML="<tr><th>Student</th><th>Assigned Faculty</th><th>Preference</th></tr>"+
+ students.map(s=>{
+   const a=assigned[s.name];
+   const p=a?s.prefs.indexOf(a)+1:null;
+   return `<tr><td>${esc(s.name)}</td><td>${a?`<span class="badge">${esc(a)}</span>`:`<span class="warning">Unassigned</span>`}</td><td>${p?`#${p}`:"—"}</td></tr>`;
+ }).join("");
+
+ const counts={}; faculties.forEach(f=>counts[f.name]=0);
+ students.forEach(s=>{if(assigned[s.name])counts[assigned[s.name]]++});
+ const assignedCount=students.length-unassigned.size;
+ document.getElementById("summary").innerHTML=`
+ <p><strong>${assignedCount}/${students.length}</strong> students assigned.</p>
+ <div class="result-grid">${faculties.map(f=>`<div class="result"><h3>${esc(f.name)}</h3><div>${counts[f.name]} / ${f.cap} seats filled</div></div>`).join("")}</div>
+ <p class="small" style="margin-top:15px">The lottery uses each student's preference position as the main weight, with an optional small bonus for students who previously lost a round.</p>`;
+ document.getElementById("results").classList.remove("hidden");
+}
+renderAll();
+</script>
+</body>
+</html>
